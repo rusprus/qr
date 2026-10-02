@@ -2,7 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import jsQR from 'jsqr'
 import CameraSelect from '../components/CameraSelect.vue'
-import { FrameAssembler, parseFrame } from '../utils/protocol'
+import { FrameAssembler, parseFrame, decodePayload } from '../utils/protocol'
 
 const videoRef = ref(null)
 const canvasRef = ref(null)
@@ -12,6 +12,7 @@ const status = ref('Нажмите «Старт», чтобы открыть к�
 const progress = ref(0)
 const total = ref(0)
 const resultText = ref('')
+const resultFile = ref(null)
 const error = ref('')
 const scanning = ref(false)
 
@@ -19,6 +20,43 @@ const assembler = new FrameAssembler()
 let stream = null
 let rafId = 0
 let lastRaw = ''
+let objectUrl = ''
+
+function revokeObjectUrl() {
+  if (objectUrl) {
+    URL.revokeObjectURL(objectUrl)
+    objectUrl = ''
+  }
+}
+
+function applyPayload(raw) {
+  revokeObjectUrl()
+  resultText.value = ''
+  resultFile.value = null
+
+  const payload = decodePayload(raw)
+  if (payload.kind === 'file') {
+    const blob = new Blob([payload.bytes], { type: payload.mime })
+    objectUrl = URL.createObjectURL(blob)
+    resultFile.value = {
+      name: payload.name,
+      mime: payload.mime,
+      sizeLabel: formatBytes(payload.bytes.length),
+      url: objectUrl,
+    }
+    status.value = 'Файл получен'
+    return
+  }
+
+  resultText.value = payload.text
+  status.value = 'Сообщение получено'
+}
+
+function formatBytes(n) {
+  if (n < 1024) return `${n} Б`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} КБ`
+  return `${(n / (1024 * 1024)).toFixed(1)} МБ`
+}
 
 async function listCameras() {
   if (!navigator.mediaDevices?.enumerateDevices) {
@@ -101,8 +139,7 @@ function scanLoop() {
           total.value = state.total
           status.value = `Собрано ${state.progress} / ${state.total}`
           if (state.complete && state.text != null) {
-            resultText.value = state.text
-            status.value = 'Сообщение получено'
+            applyPayload(state.text)
           }
         }
       }
@@ -115,6 +152,8 @@ function scanLoop() {
 async function start() {
   error.value = ''
   resultText.value = ''
+  resultFile.value = null
+  revokeObjectUrl()
   progress.value = 0
   total.value = 0
   lastRaw = ''
@@ -155,6 +194,8 @@ function resetMessage() {
   progress.value = 0
   total.value = 0
   resultText.value = ''
+  resultFile.value = null
+  revokeObjectUrl()
   lastRaw = ''
   status.value = scanning.value ? 'Наведите камеру на QR' : status.value
 }
@@ -176,7 +217,10 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(stop)
+onBeforeUnmount(() => {
+  stop()
+  revokeObjectUrl()
+})
 </script>
 
 <template>
@@ -197,12 +241,12 @@ onBeforeUnmount(stop)
         Стоп
       </button>
       <button
-        v-if="resultText || progress"
+        v-if="resultText || resultFile || progress"
         class="btn btn-ghost"
         type="button"
         @click="resetMessage"
       >
-        Сбросить сообщение
+        Сбросить
       </button>
     </div>
 
@@ -219,7 +263,18 @@ onBeforeUnmount(stop)
       <canvas ref="canvasRef" class="hidden-canvas"></canvas>
     </div>
 
-    <section v-if="resultText" class="stack">
+    <section v-if="resultFile" class="stack">
+      <h2 class="result-title">Файл</h2>
+      <div class="result file-result">
+        <div class="file-name">{{ resultFile.name }}</div>
+        <p class="status">{{ resultFile.sizeLabel }} · {{ resultFile.mime }}</p>
+        <a class="btn btn-primary download" :href="resultFile.url" :download="resultFile.name">
+          Скачать
+        </a>
+      </div>
+    </section>
+
+    <section v-else-if="resultText" class="stack">
       <h2 class="result-title">Текст</h2>
       <div class="result">{{ resultText }}</div>
     </section>
@@ -252,5 +307,21 @@ onBeforeUnmount(stop)
   font-size: 1rem;
   color: var(--muted);
   font-weight: 600;
+}
+
+.file-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.file-name {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.download {
+  text-align: center;
+  display: block;
 }
 </style>

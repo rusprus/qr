@@ -1,6 +1,12 @@
 /** @typedef {{ id: string, i: number, n: number, d: string }} QrFrame */
+/** @typedef {{ kind: 'text', text: string }} TextPayload */
+/** @typedef {{ kind: 'file', name: string, mime: string, bytes: Uint8Array }} FilePayload */
+/** @typedef {TextPayload | FilePayload} TransferPayload */
 
-const CHUNK_BYTES = 90
+export const CHUNK_BYTES = 90
+/** Soft limit: QR transfer is slow (~90 B/s). */
+export const MAX_FILE_BYTES = 48 * 1024
+export const FRAME_INTERVAL_MS = 1000
 
 /**
  * Split UTF-8 text into byte-sized chunks without breaking code points.
@@ -42,12 +48,107 @@ export function newSessionId() {
 /**
  * @param {string} text
  * @param {string} [sessionId]
+ * @param {number} [chunkBytes]
  * @returns {QrFrame[]}
  */
-export function buildFrames(text, sessionId = newSessionId()) {
-  const chunks = chunkText(text)
+export function buildFrames(text, sessionId = newSessionId(), chunkBytes = CHUNK_BYTES) {
+  const chunks = chunkText(text, chunkBytes)
   const n = chunks.length
   return chunks.map((d, i) => ({ id: sessionId, i, n, d }))
+}
+
+/**
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+export function bytesToBase64(bytes) {
+  let binary = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return btoa(binary)
+}
+
+/**
+ * @param {string} base64
+ * @returns {Uint8Array}
+ */
+export function base64ToBytes(base64) {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
+/**
+ * @param {string} name
+ * @param {string} mime
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+export function encodeFilePayload(name, mime, bytes) {
+  return JSON.stringify({
+    v: 1,
+    kind: 'file',
+    name: name || 'file',
+    mime: mime || 'application/octet-stream',
+    data: bytesToBase64(bytes),
+  })
+}
+
+/**
+ * Decode reassembled transfer string (plain text or file envelope).
+ * @param {string} raw
+ * @returns {TransferPayload}
+ */
+export function decodePayload(raw) {
+  try {
+    const data = JSON.parse(raw)
+    if (
+      data?.v === 1 &&
+      data?.kind === 'file' &&
+      typeof data.data === 'string' &&
+      typeof data.name === 'string'
+    ) {
+      return {
+        kind: 'file',
+        name: data.name || 'file',
+        mime: typeof data.mime === 'string' ? data.mime : 'application/octet-stream',
+        bytes: base64ToBytes(data.data),
+      }
+    }
+  } catch {
+    /* plain text */
+  }
+  return { kind: 'text', text: raw }
+}
+
+/**
+ * @param {number} byteLength
+ * @param {{ chunkBytes?: number, frameIntervalMs?: number }} [opts]
+ * @returns {{ frames: number, seconds: number }}
+ */
+export function estimateTransfer(byteLength, opts = {}) {
+  const chunkBytes = opts.chunkBytes ?? CHUNK_BYTES
+  const frameIntervalMs = opts.frameIntervalMs ?? FRAME_INTERVAL_MS
+  // base64 + JSON envelope overhead ≈ 4/3 + ~80 bytes
+  const payloadBytes = Math.ceil(byteLength * 1.37) + 80
+  const frames = Math.max(1, Math.ceil(payloadBytes / chunkBytes))
+  return { frames, seconds: frames * (frameIntervalMs / 1000) }
+}
+
+/**
+ * @param {number} seconds
+ * @returns {string}
+ */
+export function formatDuration(seconds) {
+  if (seconds < 60) return `~${Math.ceil(seconds)} с`
+  const m = Math.floor(seconds / 60)
+  const s = Math.ceil(seconds % 60)
+  return s ? `~${m} мин ${s} с` : `~${m} мин`
 }
 
 /**

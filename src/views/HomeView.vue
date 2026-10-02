@@ -2,8 +2,8 @@
   <main class="page home">
     <h1 class="brand">QR Transfer</h1>
     <p class="lede">
-      Передайте текст с одного смартфона на другой через QR на экране.
-      Отправитель крутит кадры раз в секунду — приёмник читает камерой.
+      Передайте текст или небольшой файл с одного смартфона на другой через QR.
+      Отправитель крутит кадры — приёмник читает камерой.
     </p>
     <div class="stack">
       <router-link class="btn btn-primary" :to="{ name: 'send' }">
@@ -11,6 +11,9 @@
       </router-link>
       <router-link class="btn" :to="{ name: 'scan' }">
         Считать камерой
+      </router-link>
+      <router-link class="btn btn-ghost" :to="{ name: 'settings' }">
+        Настройки скорости
       </router-link>
     </div>
   </main>
