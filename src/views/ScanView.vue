@@ -43,8 +43,9 @@ function applyPayload(raw) {
       mime: payload.mime,
       sizeLabel: formatBytes(payload.bytes.length),
       url: objectUrl,
+      isAudio: /^audio\//i.test(payload.mime),
     }
-    status.value = 'Файл получен'
+    status.value = resultFile.value.isAudio ? 'Голос получен' : 'Файл получен'
     return
   }
 
@@ -228,7 +229,7 @@ onBeforeUnmount(() => {
     <div class="topbar">
       <router-link class="back" :to="{ name: 'home' }">← Назад</router-link>
     </div>
-    <h1 class="brand">Считать камерой</h1>
+    <h1 class="brand">Принять</h1>
     <p class="lede">Выберите камеру и наведите её на QR на другом смартфоне.</p>
 
     <CameraSelect v-model="selectedDeviceId" :devices="devices" />
@@ -264,10 +265,16 @@ onBeforeUnmount(() => {
     </div>
 
     <section v-if="resultFile" class="stack">
-      <h2 class="result-title">Файл</h2>
+      <h2 class="result-title">{{ resultFile.isAudio ? 'Голос' : 'Файл' }}</h2>
       <div class="result file-result">
         <div class="file-name">{{ resultFile.name }}</div>
         <p class="status">{{ resultFile.sizeLabel }} · {{ resultFile.mime }}</p>
+        <audio
+          v-if="resultFile.isAudio"
+          class="audio"
+          controls
+          :src="resultFile.url"
+        />
         <a class="btn btn-primary download" :href="resultFile.url" :download="resultFile.name">
           Скачать
         </a>
@@ -318,6 +325,10 @@ onBeforeUnmount(() => {
 .file-name {
   font-weight: 600;
   word-break: break-all;
+}
+
+.audio {
+  width: 100%;
 }
 
 .download {

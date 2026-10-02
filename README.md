@@ -1,6 +1,6 @@
 # QR Transfer
 
-Vue 3 web app that transfers text or small files between two phones optically:
+Vue 3 web app that transfers text, small files, or short voice notes between two phones optically:
 
 1. **Show QR** — splits text/file into frames and displays a new QR every second.
 2. **Scan camera** — reads those frames with the phone camera and reassembles the payload (download for files).
